@@ -19,16 +19,19 @@ import vanshImage from '@/assets/team/vansh.jpg';
 import armaanImage from '@/assets/team/armaan.jpg';
 import parthImage from '@/assets/team/parth.jpg';
 
-
+import FeedbackModal from '../components/FeedbackModal';
 
 
 
 function Home() {
-  const [keys, setKeys] = useState([]);
+  //const [keys, setKeys] = useState([]);
   const [selectedOption, setSelectedOption] = useState(null);
   const navigate = useNavigate();
 
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   
+  const handleOpenFeedback = () => setShowFeedbackModal(true);
+  const handleCloseFeedback = () => setShowFeedbackModal(false);
 
   const handleChange = (selected) => {
     setSelectedOption(selected);
@@ -170,6 +173,14 @@ function Home() {
           
         
       </div>
+      <button className="feedback-floating-button" onClick={handleOpenFeedback}>
+        Feedback
+      </button>
+
+      <FeedbackModal 
+        show={showFeedbackModal} 
+        handleClose={handleCloseFeedback} 
+      />
       
     </div>
   );

@@ -6,6 +6,7 @@ import '@/assets/index.css';
 import '@/assets/schedule.css';
 import useViewPortMetaTag from '@/hooks/useViewPortMetaTag'
 import VideoPopup from "../components/VideoPopup"
+import FeedbackModal from '../components/FeedbackModal';
 
 function Schedule() {
   useViewPortMetaTag(1200);
@@ -30,6 +31,11 @@ function Schedule() {
     }
   };
 
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+
+  const handleOpenFeedback = () => setShowFeedbackModal(true);
+  const handleCloseFeedback = () => setShowFeedbackModal(false);
+  
   const handleOpenPopup = () => {
     setShowPopup(true);
   };
@@ -41,6 +47,7 @@ function Schedule() {
   if (!scheduleData) {
     return <div>Loading...</div>;
   }
+
 
   return (
     <div>
@@ -60,6 +67,14 @@ function Schedule() {
       <VideoPopup
         show={showPopup}
         handleClose={handleClosePopup}
+      />
+      <button className="feedback-floating-button" onClick={handleOpenFeedback}>
+        Feedback
+      </button>
+
+      <FeedbackModal 
+        show={showFeedbackModal} 
+        handleClose={handleCloseFeedback} 
       />
     </div>
   );
