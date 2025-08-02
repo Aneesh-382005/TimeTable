@@ -1,5 +1,5 @@
 import html2canvas from 'html2canvas';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './FeedbackModal.css';
 
 const FeedbackModal = ({ show, handleClose}) => {
@@ -19,6 +19,69 @@ const FeedbackModal = ({ show, handleClose}) => {
     const [capturedScreenshot, setCapturedScreenshot] = useState(null);
     const [isHiddenForCapture, setIsHiddenForCapture] = useState(false);
 
+    const TURNSTILE_SITE_KEY = "0x4AAAAAABnmI8MCABrxy8RR";
+    const [turnstileToken, setTurnstileToken] = useState(null);
+    const [turnstileLoading, setTurnstileLoading] = useState(true);
+
+    useEffect(() => {
+        if (show) {
+            setTurnstileLoading(true);
+            setTurnstileToken(null);
+            
+            const renderTurnstileWidget = () => {
+                const container = document.querySelector('.cf-turnstile');
+                if (container) {
+                    container.innerHTML = '';
+                }
+                
+                setTimeout(() => {
+                    if (window.turnstile && window.turnstile.render) {
+                        try {
+                            console.log('Auto-rendering Turnstile widget');
+                            window.turnstile.render('.cf-turnstile', {
+                                sitekey: TURNSTILE_SITE_KEY,
+                                callback: (token) => {
+                                    console.log('Direct callback - Turnstile success:', token);
+                                    setTurnstileToken(token);
+                                    setTurnstileLoading(false);
+                                },
+                                'error-callback': () => {
+                                    console.log('Direct callback - Turnstile error');
+                                    setTurnstileToken(null);
+                                    setTurnstileLoading(false);
+                                }
+                            });
+                            setTurnstileLoading(false);
+                            console.log('Turnstile widget rendered successfully');
+                        } catch (e) {
+                            console.error('Auto render failed:', e);
+                            setTurnstileLoading(false);
+                        }
+                    } else {
+                        console.log('Turnstile API not ready, retrying...');
+                        setTimeout(renderTurnstileWidget, 500);
+                    }
+                }, 100);
+            };
+
+            const timer = setTimeout(renderTurnstileWidget, 200);
+            
+            const fallbackTimeout = setTimeout(() => {
+                setTurnstileLoading(false);
+                console.log('Turnstile auto-render timeout');
+            }, 10000);
+
+            return () => {
+                clearTimeout(timer);
+                clearTimeout(fallbackTimeout);
+            };
+        }
+
+        return () => {
+            // Cleanup - no longer needed since we use direct callbacks
+        };
+    }, [show]);
+
     const handleInputChange = (e) => {
         const {name, value} = e.target;
         setFormData(prev => ({
@@ -34,24 +97,62 @@ const FeedbackModal = ({ show, handleClose}) => {
             alert('Please fill in all required fields.');
             return;
         }
+
+        if (!turnstileToken) {
+            alert('Please complete the CAPTCHA verification.');
+            return;
+        }
+
         setIsSubmitting(true);
 
         try {
-            console.log('Form Data:', formData);
-            setSubmitStatus('success');
+            const submitData = new FormData();
+            submitData.append('issueType', formData.issueType);
+            submitData.append('description', formData.description);
+            submitData.append('email', formData.email);
+            submitData.append('pageURL', formData.pageURL);
+            submitData.append('userAgent', formData.userAgent);
+            submitData.append('turnstileToken', turnstileToken);
 
-            setTimeout(() => {
-                setSubmitStatus(null);
-                setFormData({
-                    issueType: '',
-                    description: '',
-                    email: '',
-                    pageURL: window.location.href,
-                    userAgent: navigator.userAgent
-                });
-                handleClose();
-            }, 2000);
-            } catch (error) {
+            if (formData.screenshot) {
+                submitData.append('screenshot', formData.screenshot);
+            }
+
+            const response = await fetch('/api/feedback', {
+                method: 'POST',
+                body: submitData
+            });
+
+            if (response.ok) {
+                setSubmitStatus('success');
+                setTimeout(() => {
+                    setSubmitStatus(null);
+                    setFormData({
+                        issueType: '',
+                        description: '',
+                        email: '',
+                        pageURL: window.location.href,
+                        userAgent: navigator.userAgent,
+                        screenshot: null
+                    });
+                    setCapturedScreenshot(null);
+                    setTurnstileToken(null);
+                    
+                    const fileInput = document.getElementById('screenshot-upload');
+                    if (fileInput) {
+                        fileInput.value = '';
+                    }
+                    
+                    if (window.turnstile) {
+                        window.turnstile.reset();
+                    }
+                    
+                    handleClose();
+                }, 2000);
+            } else {
+                throw new Error('Submission failed');
+            }
+        } catch (error) {
             console.error('Error submitting feedback:', error);
             setSubmitStatus('error');
         } finally {
@@ -125,12 +226,16 @@ const FeedbackModal = ({ show, handleClose}) => {
         }
     };
 
+    const isFormValid = formData.issueType && formData.description && turnstileToken;    
+
     return (
         <div className={`feedback-popup ${show ? 'show' : ''} ${isHiddenForCapture ? 'hidden-for-capture' : ''}`}>
             <div className="feedback-popup-content">
-                {!isHiddenForCapture && (
-                    <>
-                        <button className='feedback-popup-close' onClick={handleClose}>×</button>
+                <div style={{ 
+                    visibility: isHiddenForCapture ? 'hidden' : 'visible',
+                    position: isHiddenForCapture ? 'absolute' : 'relative'
+                }}>
+                    <button className='feedback-popup-close' onClick={handleClose}>×</button>
                         <h2 className='feedback-title'>Feedback</h2>
                         <p className='feedback-subtitle'>
                             Found an issue or have a suggestion? We'd love to hear from you!
@@ -245,6 +350,39 @@ const FeedbackModal = ({ show, handleClose}) => {
                                         Capture the current page or upload an existing screenshot to help us understand the issue better
                                     </small>
                                 </div>
+                                {/* Turnstile CAPTCHA */}
+                                <div className='feedback-field'>
+                                    <label className='feedback-label'>
+                                        Security Verification <span className='required'>*</span>
+                                    </label>
+                                    <div className='turnstile-container'>
+                                        {turnstileLoading && (
+                                            <div className="turnstile-loading">
+                                                🔄 Loading CAPTCHA...
+                                            </div>
+                                        )}
+                                        
+                                        <div
+                                            className='cf-turnstile'
+                                            data-sitekey={TURNSTILE_SITE_KEY}
+                                            data-callback="handleTurnstileSuccess"
+                                            data-error-callback="handleTurnstileError"
+                                            data-expired-callback="handleTurnstileError"
+                                            data-theme="auto"
+                                            data-size="normal"
+                                        ></div>
+                                        
+                                        {turnstileToken && (
+                                            <small className="feedback-success-small">
+                                                ✅ Verification complete
+                                            </small>
+                                        )}
+                                        
+                                        <small className='feedback-help'>
+                                            Please verify you're human to submit feedback
+                                        </small>
+                                    </div>
+                                </div>
                                 {/* Submit Button */}
                                 <div className = 'feedback-actions'>
                                     { submitStatus === 'success' && (
@@ -259,18 +397,20 @@ const FeedbackModal = ({ show, handleClose}) => {
                                         </div>
                                     )}
 
-                                    <button
-                                        type = "submit"
-                                        className = 'feedback-submit'
-                                        disabled = {isSubmitting}
+                                    <button 
+                                        type="submit" 
+                                        disabled={!isFormValid || isSubmitting}
+                                        className={`feedback-submit ${isFormValid ? 'ready' : 'pending'}`}
                                     >
-                                        {isSubmitting ? 'Sending...': 'Send Feedback'}
+                                        {isSubmitting ? 'Sending...' : 
+                                         !turnstileToken ? 'Submit CAPTCHA to Send' :
+                                         !formData.issueType || !formData.description ? 'Fill Required Fields' :
+                                         'Send Feedback'}
                                     </button>
                                 </div>
                             </form>
                         </div>
-                    </>
-                )}
+                </div>
                 
                 {isHiddenForCapture && (
                     <div className="capture-in-progress">
